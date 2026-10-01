@@ -14,6 +14,7 @@ import queue
 import socket
 import sys
 import threading
+import time
 import tkinter as tk
 import tkinter.font as tkfont
 import webbrowser
@@ -22,6 +23,7 @@ from tkinter import messagebox, ttk
 from urllib.parse import quote
 
 import settings
+import updater
 import winutil
 from gmail_client import AuthError, DemoClient, GmailClient, Message
 from version import VERSION
@@ -32,6 +34,9 @@ MIN_POLL_SECONDS = 15
 MIN_WIDTH = 220  # a sáv legkisebb szélessége
 SNAP = 12  # ennyi képponton belül a képernyő széléhez tapad
 DRAG_THRESHOLD = 4  # ennél kisebb elmozdulás még kattintásnak számít
+UPDATE_UID = -1  # a „új verzió elérhető” elem azonosítója a sávon (a levelek uid-ja pozitív)
+UPDATE_FIRST_CHECK = 15  # mp indulás után
+UPDATE_INTERVAL = 24 * 3600
 
 log = logging.getLogger("mail_ticker")
 
@@ -68,10 +73,14 @@ class TickerApp:
         self.paused = False
         self.error: str | None = None
         self._drag: dict | None = None
+        self.update_release: updater.Release | None = None
+        self.updating = False
 
         self._build_ui()
         self.apply_settings()
         threading.Thread(target=self._poll_loop, daemon=True).start()
+        if not demo:
+            threading.Thread(target=self._update_loop, daemon=True).start()
         self.root.after(TICK_MS, self._tick)
         self.root.after(200, self._process_queue)
         if not demo and not (cfg["email"] and cfg.password):
@@ -118,6 +127,7 @@ class TickerApp:
                 label="Indítás a Windows-zal", variable=self.autostart_var, command=self._toggle_autostart
             )
         self.menu.add_separator()
+        self.menu.add_command(label="Új verzió keresése…", command=self.check_update_now)
         self.menu.add_command(label=f"Mail Ticker {VERSION}", state="disabled")
         self.menu.add_command(label="Kilépés", command=self.root.destroy)
 
@@ -254,15 +264,16 @@ class TickerApp:
                 return max(bbox[2] + GAP, width)
         return width
 
-    def _add_item(self, msg: Message) -> None:
+    def _add_item(self, msg: Message, icon: str = "✉", accent: str | None = None) -> None:
         cfg = self.cfg
+        accent = accent or cfg["sender_fg"]
         tag = f"m{msg.uid}"
         x = self._tail_x()
         rect = self.canvas.create_rectangle(x, 0, x, self.bar_h, fill=cfg["bg"], outline="", tags=("msg", tag))
         cx = x + 8
         parts = [
-            ("✉", self.font, cfg["sender_fg"]),
-            (self.safe_text(msg.sender), self.bold, cfg["sender_fg"]),
+            (icon, self.font, accent),
+            (self.safe_text(msg.sender), self.bold, accent),
             (self.safe_text(msg.subject), self.font, cfg["subject_fg"]),
             (format_date(msg.date), self.small, cfg["date_fg"]),
         ]
@@ -294,7 +305,8 @@ class TickerApp:
 
     def _clear(self) -> None:
         for uid in list(self.order):
-            self._remove_item(uid)
+            if uid != UPDATE_UID:
+                self._remove_item(uid)
         self.dismissed.clear()
         self.loaded = False
 
@@ -302,7 +314,7 @@ class TickerApp:
         unread_uids = {m.uid for m in unread}
         self.dismissed &= unread_uids
         for uid in list(self.order):
-            if uid not in unread_uids:  # máshol (pl. telefonon) már elolvasták
+            if uid != UPDATE_UID and uid not in unread_uids:  # máshol (pl. telefonon) már elolvasták
                 self._remove_item(uid)
         new = [m for m in unread if m.uid not in self.messages and m.uid not in self.dismissed]
         if not self.loaded:
@@ -329,15 +341,18 @@ class TickerApp:
 
     def _refresh_status(self) -> None:
         cfg = self.cfg
-        count = len(self.order)
-        self.badge.configure(text=f"✉ {count}" if not self.error else "⚠", bg=cfg["error_bg" if self.error else "badge_bg"])
-        if count:
+        count = sum(1 for uid in self.order if uid != UPDATE_UID)
+        if not self.updating:
+            self.badge.configure(
+                text=f"✉ {count}" if not self.error else "⚠", bg=cfg["error_bg" if self.error else "badge_bg"]
+            )
+        if self.order:
             self.canvas.itemconfigure(self.status_id, state="hidden")
         else:
             text = self.error or "Nincs olvasatlan levél"
             self.canvas.itemconfigure(self.status_id, state="normal", text=text)
 
-        if cfg.get_bool("hide_when_empty") and not count and not self.error:
+        if cfg.get_bool("hide_when_empty") and not self.order and not self.error:
             self.root.withdraw()
         elif self.root.state() == "withdrawn":
             self.root.deiconify()
@@ -356,6 +371,9 @@ class TickerApp:
         webbrowser.open(self._gmail_base() + "#inbox")
 
     def open_message(self, uid: int) -> None:
+        if uid == UPDATE_UID:
+            self.start_update()
+            return
         msg = self.messages.get(uid)
         if msg is None:
             return
@@ -367,6 +385,88 @@ class TickerApp:
         self._refresh_status()
         if self.cfg.get_bool("mark_as_read"):
             threading.Thread(target=self._mark_seen, args=(self.client, uid), daemon=True).start()
+
+    # ---------- önfrissítés ----------
+
+    def check_update_now(self) -> None:
+        threading.Thread(target=self._check_update, args=(True,), daemon=True).start()
+
+    def _check_update(self, manual: bool) -> None:
+        try:
+            self.queue.put(("update_found", None, (updater.check_latest(), manual)))
+        except Exception as e:
+            log.warning("Frissítéskeresési hiba: %s", e)
+            if manual:
+                self.queue.put(("update_failed", None, f"Nem sikerült ellenőrizni a frissítést:\n{e}"))
+
+    def _update_loop(self) -> None:
+        time.sleep(UPDATE_FIRST_CHECK)
+        while True:
+            if self.cfg.get_bool("update_check"):
+                self._check_update(manual=False)
+            time.sleep(UPDATE_INTERVAL)
+
+    def _on_update_found(self, release: updater.Release | None, manual: bool) -> None:
+        if release is None:
+            if manual:
+                messagebox.showinfo("Mail Ticker", f"A legfrissebb verziót használod ({VERSION}).")
+            return
+        log.info("Új verzió érhető el: %s", release.version)
+        if self.update_release is None or self.update_release.version != release.version:
+            self._remove_item(UPDATE_UID)
+            self.update_release = release
+            item = Message(UPDATE_UID, 0, f"Új verzió érhető el: {release.version}", "kattints ide a frissítéshez", None)
+            self._add_item(item, icon="⬆", accent=self.cfg["update_fg"])
+            self._refresh_status()
+        if manual:
+            self.start_update()
+
+    def start_update(self) -> None:
+        release = self.update_release
+        if release is None or self.updating:
+            return
+        if not updater.can_self_update():
+            webbrowser.open(release.page_url)  # forrásból futtatva csak a letöltőoldalt nyitjuk meg
+            return
+        notes = release.notes[:800] + ("…" if len(release.notes) > 800 else "")
+        question = f"Frissítés a {release.version} verzióra (most: {VERSION})?\n\n"
+        if notes:
+            question += f"Újdonságok:\n{notes}\n\n"
+        question += "A program letölti az új verziót, majd újraindul."
+        if not messagebox.askyesno("Mail Ticker – frissítés", question):
+            return
+        self.updating = True
+        self.badge.configure(text="⬇ 0%", bg=self.cfg["badge_bg"])
+        threading.Thread(target=self._download_update, args=(release,), daemon=True).start()
+
+    def _download_update(self, release: updater.Release) -> None:
+        def progress(done: int, total: int) -> None:
+            if total:
+                self.queue.put(("update_progress", None, done * 100 // total))
+
+        try:
+            self.queue.put(("update_ready", None, updater.download(release, progress)))
+        except Exception as e:
+            log.exception("Frissítés letöltése sikertelen")
+            self.queue.put(("update_failed", None, f"A frissítés letöltése nem sikerült:\n{e}"))
+
+    def _install_update(self, path: str) -> None:
+        try:
+            updater.install_and_restart(path)
+        except Exception as e:
+            log.exception("Frissítés telepítése sikertelen")
+            self._update_failed(
+                f"Nem sikerült kicserélni a programfájlt:\n{e}\n\n"
+                "Ha az exe védett mappában van (pl. Program Files), tedd egy saját mappába."
+            )
+            return
+        log.info("Frissítve a %s verzióra, újraindítás", self.update_release.version)
+        self.root.destroy()
+
+    def _update_failed(self, text: str) -> None:
+        self.updating = False
+        self._refresh_status()
+        messagebox.showerror("Mail Ticker – frissítés", text)
 
     # ---------- háttérszálak ----------
 
@@ -397,6 +497,9 @@ class TickerApp:
         try:
             while True:
                 kind, client, payload = self.queue.get_nowait()
+                if kind.startswith("update_"):
+                    self._handle_update_event(kind, payload)
+                    continue
                 if client is not self.client:
                     continue  # időközben fiókot váltottak
                 if kind == "messages":
@@ -408,6 +511,16 @@ class TickerApp:
         except queue.Empty:
             pass
         self.root.after(200, self._process_queue)
+
+    def _handle_update_event(self, kind: str, payload) -> None:
+        if kind == "update_found":
+            self._on_update_found(*payload)
+        elif kind == "update_progress":
+            self.badge.configure(text=f"⬇ {payload}%")
+        elif kind == "update_ready":
+            self._install_update(payload)
+        elif kind == "update_failed":
+            self._update_failed(payload)
 
 
 class SettingsDialog(tk.Toplevel):
@@ -426,6 +539,7 @@ class SettingsDialog(tk.Toplevel):
         self.width = tk.StringVar(value=str(app.root.winfo_width()))
         self.hide_empty = tk.BooleanVar(value=cfg.get_bool("hide_when_empty"))
         self.mark_read = tk.BooleanVar(value=cfg.get_bool("mark_as_read"))
+        self.update_check = tk.BooleanVar(value=cfg.get_bool("update_check"))
 
         frame = ttk.Frame(self, padding=14)
         frame.pack(fill="both", expand=True)
@@ -450,6 +564,9 @@ class SettingsDialog(tk.Toplevel):
         ttk.Checkbutton(frame, text="Sáv elrejtése, ha nincs olvasatlan levél", variable=self.hide_empty).grid(
             row=6, column=0, columnspan=2, sticky="w"
         )
+        ttk.Checkbutton(frame, text="Új verzió keresése automatikusan", variable=self.update_check).grid(
+            row=7, column=0, columnspan=2, sticky="w", pady=(2, 0)
+        )
         ttk.Label(
             frame,
             foreground="#555",
@@ -457,10 +574,10 @@ class SettingsDialog(tk.Toplevel):
             justify="left",
             text="Gmail-alkalmazásjelszó kell (nem a normál jelszó): Google-fiók → Biztonság → "
             "Kétlépcsős azonosítás bekapcsolása, majd myaccount.google.com/apppasswords.",
-        ).grid(row=7, column=0, columnspan=2, sticky="w", pady=(10, 0))
+        ).grid(row=8, column=0, columnspan=2, sticky="w", pady=(10, 0))
 
         buttons = ttk.Frame(frame)
-        buttons.grid(row=8, column=0, columnspan=2, sticky="e", pady=(14, 0))
+        buttons.grid(row=9, column=0, columnspan=2, sticky="e", pady=(14, 0))
         ttk.Button(buttons, text="Mégse", command=self.destroy).pack(side="right")
         ttk.Button(buttons, text="Mentés", command=self._save).pack(side="right", padx=6)
 
@@ -497,6 +614,7 @@ class SettingsDialog(tk.Toplevel):
             cfg.set("y", self.app.root.winfo_y())
         cfg.set("hide_when_empty", "yes" if self.hide_empty.get() else "no")
         cfg.set("mark_as_read", "yes" if self.mark_read.get() else "no")
+        cfg.set("update_check", "yes" if self.update_check.get() else "no")
         settings.save(cfg)
         self.destroy()
         self.app.apply_settings()
@@ -511,10 +629,51 @@ def setup_logging() -> None:
     logging.basicConfig(level=logging.INFO, handlers=[handler])
 
 
+def run_cli_update() -> None:
+    """MailTicker.exe --update: kérdezés nélküli frissítés (pl. parancsikonról vagy szkriptből)."""
+    root = tk.Tk()
+    root.withdraw()
+    try:
+        if not updater.can_self_update():
+            raise RuntimeError("Frissíteni csak a MailTicker.exe tudja magát.")
+        if not winutil.acquire_single_instance():
+            messagebox.showinfo(
+                "Mail Ticker",
+                "A Mail Ticker most is fut. Frissítéshez kattints jobb gombbal a sávra → "
+                "„Új verzió keresése…”, vagy lépj ki belőle, és futtasd újra ezt.",
+            )
+            return
+        release = updater.check_latest()
+        if release is None:
+            log.info("--update: nincs újabb verzió (%s)", VERSION)
+            messagebox.showinfo("Mail Ticker", f"A legfrissebb verziót használod ({VERSION}).")
+            return
+        log.info("--update: frissítés %s → %s", VERSION, release.version)
+        updater.install_and_restart(updater.download(release))
+    except Exception as e:
+        log.exception("--update sikertelen")
+        messagebox.showerror("Mail Ticker – frissítés", f"A frissítés nem sikerült:\n{e}")
+    finally:
+        root.destroy()
+
+
 def main() -> None:
     setup_logging()
-    if not winutil.acquire_single_instance():
+    if "--update" in sys.argv:
+        socket.setdefaulttimeout(30)
+        run_cli_update()
         return
+    after_update = "--after-update" in sys.argv
+    # frissítés után a régi példány még épp kiléphet: kicsit várunk rá
+    for _ in range(20 if after_update else 1):
+        if winutil.acquire_single_instance():
+            break
+        time.sleep(0.5)
+    else:
+        return
+    if after_update:
+        log.info("Elindult a frissített verzió: %s", VERSION)
+        threading.Thread(target=updater.cleanup_after_update, daemon=True).start()
     winutil.enable_dpi_awareness()
     socket.setdefaulttimeout(30)  # ne akadjon el a lekérdezés hálózati hibánál
     root = tk.Tk()

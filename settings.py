@@ -33,9 +33,11 @@ DEFAULTS = {
     "sender_fg": "#ffd36b",
     "subject_fg": "#ffffff",
     "date_fg": "#9fb3c8",
+    "update_fg": "#68d391",
     "alpha": "0.95",
     "hide_when_empty": "no",
     "mark_as_read": "yes",
+    "update_check": "yes",  # új verzió keresése indításkor és naponta
 }
 
 

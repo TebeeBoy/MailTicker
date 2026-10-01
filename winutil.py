@@ -36,8 +36,19 @@ def acquire_single_instance(name: str = "Local\\MailTicker_SingleInstance") -> b
     kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
     kernel32.CreateMutexW.restype = wintypes.HANDLE
     handle = kernel32.CreateMutexW(None, False, name)
+    if ctypes.get_last_error() == 183:  # ERROR_ALREADY_EXISTS
+        kernel32.CloseHandle(handle)  # különben mi magunk tartanánk életben, és újrapróbálkozáskor sem indulnánk el
+        return False
     _mutex_handles.append(handle)
-    return ctypes.get_last_error() != 183  # ERROR_ALREADY_EXISTS
+    return True
+
+
+def release_single_instance() -> None:
+    """Frissítés után az új példány indulhasson el, mielőtt ez kilép."""
+    if not IS_WINDOWS:
+        return
+    while _mutex_handles:
+        ctypes.windll.kernel32.CloseHandle(_mutex_handles.pop())
 
 
 def work_area(root) -> tuple[int, int, int, int]:

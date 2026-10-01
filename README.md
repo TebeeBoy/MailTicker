@@ -14,12 +14,27 @@ A képernyő tetején (vagy alján) futó sávon az olvasatlan levelek gördüln
 | Kattintás a bal oldali számlálóra | Gmail beérkezett levelek |
 | Húzás a számlálónál vagy a sáv üres részén | a sáv áthelyezése (a képernyő széleihez tapad) |
 | Húzás a jobb szélső ⋮ fogantyúnál | szélesség állítása |
-| Jobb klikk | Frissítés most · Beállítások · Alaphelyzet · Indítás a Windows-zal · Kilépés |
+| Jobb klikk | Frissítés most · Beállítások · Alaphelyzet · Indítás a Windows-zal · Új verzió keresése · Kilépés |
 
 A sáv helyét és szélességét a program megjegyzi. Ha a mentett hely már nem látszik
 (pl. lecsatolt második monitor), a sáv visszaáll a bal felső sarokba.
 
 A máshol (pl. telefonon) elolvasott levelek a következő lekérdezéskor maguktól eltűnnek.
+
+## Frissítés
+
+A program indítás után és naponta egyszer megnézi a GitHubon, van-e új kiadás.
+Ha van, a sávon zöld „⬆ Új verzió érhető el” elem jelenik meg; rákattintva letölti,
+kicseréli magát és újraindul. Kézzel: jobb klikk → **Új verzió keresése…**.
+
+Parancssorból vagy parancsikonról, kérdezés nélkül (ha a program épp nem fut):
+
+```bat
+MailTicker.exe --update
+```
+
+Az exe-nek írható mappában kell lennie (pl. `%LOCALAPPDATA%\MailTicker` vagy az Asztal),
+a `Program Files` alatt nem tudja kicserélni magát.
 
 ## Gmail előkészítése
 
@@ -59,10 +74,15 @@ build.bat
 Az első futás felépíti a build-környezetet a `~/.cache/mail_ticker_wine` mappába
 (Python 3.11 + PyInstaller), a további buildek ezt használják. Kell hozzá a `wine` (32 bites).
 
-## Verziók
+## Új verzió kiadása
 
 A verziószám a `version.py`-ban van; ez kerül az exe tulajdonságaiba, a menübe és a
-Beállítások ablak címébe. Kiadáskor: verzió átírása → commit → `git tag vX.Y.Z` → build.
+Beállítások ablak címébe.
+
+1. `version.py`: `VERSION` átírása (pl. `0.4.0` → `0.4.1`), commit.
+2. `./release.sh` – tag, exe-build (Wine), push, GitHub-kiadás az exe-vel.
+
+A telepített programok ezután maguktól jelzik az új verziót.
 
 ## Beállítások
 
@@ -80,5 +100,7 @@ A kinézet (színek, betűtípus, átlátszóság) a fájlban módosítható, ut
 | `alpha` | 0.95 | átlátszóság (0.3–1.0) |
 | `hide_when_empty` | no | sáv elrejtése, ha nincs olvasatlan levél |
 | `mark_as_read` | yes | kattintáskor olvasottnak jelölés a Gmailben |
+| `update_check` | yes | új verzió keresése indításkor és naponta |
+| `update_fg` | | az „új verzió” elem színe |
 
 Napló: `%APPDATA%\MailTicker\mail_ticker.log`.
