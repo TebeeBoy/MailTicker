@@ -2,4 +2,4 @@
 VERSION = "0.4.0"
 
 # GitHub-tároló, ahonnan a program a frissítéseket letölti (owner/repo)
-UPDATE_REPO = "OWNER/MailTicker"
+UPDATE_REPO = "TebeeBoy/MailTicker"
