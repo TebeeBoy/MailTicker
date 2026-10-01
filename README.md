@@ -42,11 +42,27 @@ python  mail_ticker.py --demo   :: kipróbálás kitalált levelekkel, Gmail né
 
 ## Exe készítése
 
+Az eredmény mindkét esetben a `dist/MailTicker.exe`, ami Python nélkül is fut.
+
+**Windowson** (telepített Pythonnal):
+
 ```bat
 build.bat
 ```
 
-Az eredmény a `dist\MailTicker.exe`, ami Python nélkül is fut.
+**Linuxon** (Wine alatt, 32 bites Windows-os Pythonnal – az exe 64 bites Windowson is fut):
+
+```bash
+./build_wine.sh
+```
+
+Az első futás felépíti a build-környezetet a `~/.cache/mail_ticker_wine` mappába
+(Python 3.11 + PyInstaller), a további buildek ezt használják. Kell hozzá a `wine` (32 bites).
+
+## Verziók
+
+A verziószám a `version.py`-ban van; ez kerül az exe tulajdonságaiba, a menübe és a
+Beállítások ablak címébe. Kiadáskor: verzió átírása → commit → `git tag vX.Y.Z` → build.
 
 ## Beállítások
 

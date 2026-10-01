@@ -24,6 +24,7 @@ from urllib.parse import quote
 import settings
 import winutil
 from gmail_client import AuthError, DemoClient, GmailClient, Message
+from version import VERSION
 
 GAP = 56  # képpont két levél között
 TICK_MS = 20  # gördítés képkockaideje
@@ -117,6 +118,7 @@ class TickerApp:
                 label="Indítás a Windows-zal", variable=self.autostart_var, command=self._toggle_autostart
             )
         self.menu.add_separator()
+        self.menu.add_command(label=f"Mail Ticker {VERSION}", state="disabled")
         self.menu.add_command(label="Kilépés", command=self.root.destroy)
 
         for widget in (self.badge, self.canvas, self.grip):
@@ -408,7 +410,7 @@ class SettingsDialog(tk.Toplevel):
         super().__init__(app.root)
         self.app = app
         cfg = app.cfg
-        self.title("Mail Ticker – Beállítások")
+        self.title(f"Mail Ticker {VERSION} – Beállítások")
         self.resizable(False, False)
         self.attributes("-topmost", True)
 
