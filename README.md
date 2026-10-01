@@ -25,9 +25,10 @@ A máshol (pl. telefonon) elolvasott levelek a következő lekérdezéskor maguk
 
 Ha van olyan böngészőablak (Chrome, Edge, Brave, Opera, Firefox), amelynek **aktív lapja**
 ennek a fióknak a Gmailje, a program azt hozza előtérbe, és abban nyitja meg a levelet
-(a címsorba illeszti a linket, a vágólap tartalmát utána visszaállítja). Ha nincs ilyen
-ablak, vagy a Gmail-lap nem az aktív lap az ablakában, új lapot nyit. Kikapcsolható a
-Beállításokban.
+(a címsorba illeszti a linket, a vágólap tartalmát utána visszaállítja). Ezután ellenőrzi,
+hogy a Gmail tényleg átváltott-e (az ablak címe a levél tárgyára változik); ha 4 mp alatt
+nem, vagy nincs ilyen ablak, vagy a Gmail-lap nem az aktív lap az ablakában, új lapon
+nyitja meg – a levél így mindig megnyílik. Kikapcsolható a Beállításokban.
 
 Ha a böngészőben több Google-fiókkal vagy bejelentkezve, a Beállításokban add meg, hányadik
 fiók ez (a Gmail címében: `mail.google.com/mail/u/0/`, `/u/1/`…).

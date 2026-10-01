@@ -231,8 +231,11 @@ def _send(inputs) -> None:
     ctypes.windll.user32.SendInput(len(inputs), array, ctypes.sizeof(_INPUT))
 
 
-def navigate_existing_gmail(url: str, address: str) -> bool:
-    """True, ha sikerült a meglévő Gmail-lapon megnyitni a linket; különben a hívó nyisson új lapot."""
+def navigate_existing_gmail(url: str, address: str, expect_title_change: bool = True) -> bool:
+    """True, ha a meglévő Gmail-lapon biztosan megnyílt a link; különben a hívó nyisson új lapot.
+
+    Blokkol (néhány tized mp-től pár mp-ig), ezért háttérszálból kell hívni.
+    """
     import threading
     import time
 
@@ -240,32 +243,53 @@ def navigate_existing_gmail(url: str, address: str) -> bool:
     if not hwnd:
         return False
     user32 = ctypes.windll.user32
+    title_before = _window_text(hwnd)
     if user32.IsIconic(hwnd):
         user32.ShowWindow(hwnd, 9)  # SW_RESTORE
     user32.SetForegroundWindow(hwnd)
-    for _ in range(20):
+    for _ in range(40):
         if user32.GetForegroundWindow() == hwnd:
             break
         time.sleep(0.05)
     else:
         return False  # nem kaptuk meg a fókuszt – nehogy máshová illesszünk be
+    # Aktiváláskor a böngésző visszaadja a fókuszt az oldal utoljára használt mezőjének
+    # (pl. a Gmail keresőjének); ha ez a Ctrl+L után történik, oda menne a link.
+    time.sleep(0.3)
 
     previous = get_clipboard_text()
     if not set_clipboard_text(url):
         return False
-    _send(_ctrl(_VK_L))  # címsor kijelölése
-    time.sleep(0.1)
-    if user32.GetForegroundWindow() != hwnd:
+
+    def still_ours() -> bool:
+        return user32.GetForegroundWindow() == hwnd
+
+    try:
+        _send(_ctrl(_VK_L))  # címsor kijelölése
+        time.sleep(0.2)
+        if not still_ours():
+            return False
+        _send(_ctrl(_VK_V))
+        time.sleep(0.15)
+        if not still_ours():
+            return False
+        _send([_key(_VK_RETURN), _key(_VK_RETURN, up=True)])
+
+        if not expect_title_change:
+            return True
+        # siker: a Gmail a megnyitott levél tárgyára írja át az ablak (aktív lap) címét
+        for _ in range(40):
+            time.sleep(0.1)
+            if _window_text(hwnd) != title_before:
+                return True
         return False
-    _send(_ctrl(_VK_V) + [_key(_VK_RETURN), _key(_VK_RETURN, up=True)])
+    finally:
+        def restore() -> None:
+            # csak akkor, ha közben a felhasználó nem másolt mást a vágólapra
+            if previous is not None and get_clipboard_text() == url:
+                set_clipboard_text(previous)
 
-    def restore() -> None:
-        # csak akkor, ha közben a felhasználó nem másolt mást a vágólapra
-        if previous is not None and get_clipboard_text() == url:
-            set_clipboard_text(previous)
-
-    threading.Timer(1.5, restore).start()
-    return True
+        threading.Timer(1.0, restore).start()
 
 
 def _autostart_command() -> str:

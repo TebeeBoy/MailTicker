@@ -364,19 +364,27 @@ class TickerApp:
         # mail/u/<n>/: a böngészőben bejelentkezett n. Google-fiók (az /u/<cím>/ és az ?authuser= forma nem működött)
         return f"https://mail.google.com/mail/u/{max(self.cfg.get_int('gmail_account_index'), 0)}/"
 
-    def _open_gmail(self, url: str) -> None:
+    def _open_gmail(self, url: str, is_message: bool = True) -> None:
         log.info("Megnyitás: %s", url)
-        address = getattr(self.client, "address", "")
-        if self.cfg.get_bool("reuse_gmail_tab"):
-            try:
-                if winutil.navigate_existing_gmail(url, address):
-                    return
-            except Exception:
-                log.exception("Nem sikerült a meglévő Gmail-lapot használni")
+        if self.cfg.get_bool("reuse_gmail_tab") and winutil.IS_WINDOWS:
+            address = getattr(self.client, "address", "")
+            threading.Thread(target=self._open_in_gmail_tab, args=(url, address, is_message), daemon=True).start()
+        else:
+            webbrowser.open(url)
+
+    def _open_in_gmail_tab(self, url: str, address: str, is_message: bool) -> None:
+        """A nyitott Gmail-lapon próbálja; ha nem biztos, hogy sikerült, új lapon nyit (mindig megnyílik)."""
+        try:
+            # a beérkezett levelekre váltásnál nem mindig változik a cím (ha már ott volt), ezt nem ellenőrizzük
+            if winutil.navigate_existing_gmail(url, address, expect_title_change=is_message):
+                return
+            log.info("A nyitott Gmail-lapon nem sikerült, új lapon nyitom")
+        except Exception:
+            log.exception("Nem sikerült a meglévő Gmail-lapot használni")
         webbrowser.open(url)
 
     def open_inbox(self) -> None:
-        self._open_gmail(self._gmail_base() + "#inbox")
+        self._open_gmail(self._gmail_base() + "#inbox", is_message=False)
 
     def open_message(self, uid: int) -> None:
         if uid == UPDATE_UID:
