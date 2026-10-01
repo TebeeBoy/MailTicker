@@ -2,8 +2,8 @@
 # Új verzió kiadása GitHub Releases-be; a telepített programok innen frissítik magukat.
 #
 # Lépések előtte: version.py-ban a VERSION átírása, majd commit.
-# A szkript: exe build (Wine) → releases/MailTicker-X.Y.Z.exe commit → git tag (vX.Y.Z)
-# → push → GitHub release + MailTicker.exe.
+# A szkript: exe + telepítő build (Wine) → releases/ commit → git tag (vX.Y.Z)
+# → push → GitHub release (MailTicker.exe + MailTicker-Setup-X.Y.Z.exe).
 # A kiadási jegyzet a legutóbbi tag óta készült commitok címeiből áll.
 set -euo pipefail
 cd "$(dirname "$0")"
@@ -33,15 +33,19 @@ strings -el dist/MailTicker.exe | grep -qx "$VERSION" || {
     exit 1
 }
 
-# az exe is verziózva kerül a gitbe: releases/MailTicker-<verzió>.exe; a tag erre a commitra mutat
+SETUP="dist/MailTicker-Setup-$VERSION.exe"
+test -f "$SETUP" || { echo "Nem készült el a telepítő: $SETUP" >&2; exit 1; }
+
+# az exe és a telepítő is verziózva kerül a gitbe (releases/); a tag erre a commitra mutat
 mkdir -p releases
 cp dist/MailTicker.exe "releases/MailTicker-$VERSION.exe"
-git add "releases/MailTicker-$VERSION.exe"
-git commit -q -m "Kiadás $VERSION: MailTicker.exe"
+cp "$SETUP" releases/
+git add "releases/MailTicker-$VERSION.exe" "releases/MailTicker-Setup-$VERSION.exe"
+git commit -q -m "Kiadás $VERSION: MailTicker.exe és telepítő"
 git tag -a "$TAG" -m "Mail Ticker $VERSION"
 
-NOTES="$(git log --no-merges --format='- %s' ${PREV_TAG:+"$PREV_TAG"..}"$TAG" | grep -v '^- Kiadás [0-9.]*: MailTicker.exe$' || true)"
+NOTES="$(git log --no-merges --format='- %s' ${PREV_TAG:+"$PREV_TAG"..}"$TAG" | grep -v '^- Kiadás [0-9.]*: MailTicker.exe' || true)"
 git push origin HEAD
 git push origin "$TAG"
-"$GH" release create "$TAG" dist/MailTicker.exe --title "Mail Ticker $VERSION" --notes "$NOTES"
+"$GH" release create "$TAG" "$SETUP" dist/MailTicker.exe --title "Mail Ticker $VERSION" --notes "$NOTES"
 echo ">> Kiadva: $TAG"

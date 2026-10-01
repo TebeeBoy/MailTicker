@@ -5,6 +5,21 @@ A képernyő tetején (vagy alján) futó sávon az olvasatlan levelek gördüln
 (feladó, tárgy, időpont). Kattintásra a levél megnyílik a böngészős Gmailben,
 és lekerül a sávról.
 
+## Telepítés
+
+Töltsd le a legfrissebb **MailTicker-Setup-x.y.z.exe**-t:
+<https://github.com/TebeeBoy/MailTicker/releases/latest>, és futtasd.
+
+- Rendszergazdai jog nem kell: a program a saját felhasználód alá települ
+  (`%LOCALAPPDATA%\Programs\MailTicker`).
+- Start menü bejegyzés, választhatóan Asztal-ikon és indítás a Windows-zal.
+- Eltávolítás: Beállítások → Alkalmazások (vagy Vezérlőpult → Programok és szolgáltatások)
+  → Mail Ticker, illetve a Start menüből. A beállítások (`%APPDATA%\MailTicker`) megmaradnak.
+- Ha korábban a hordozható `MailTicker.exe`-t használtad: lépj ki belőle, telepítsd ezt,
+  majd a régi exe-t töröld. A beállításokat a telepített program is átveszi.
+
+A hordozható `MailTicker.exe` (telepítés nélkül) továbbra is elérhető a kiadásoknál.
+
 ## Kezelés
 
 | Művelet | Hatás |
@@ -36,8 +51,11 @@ fiók ez (a Gmail címében: `mail.google.com/mail/u/0/`, `/u/1/`…).
 ## Frissítés
 
 A program indítás után és naponta egyszer megnézi a GitHubon, van-e új kiadás.
-Ha van, a sávon zöld „⬆ Új verzió érhető el” elem jelenik meg; rákattintva letölti,
-kicseréli magát és újraindul. Kézzel: jobb klikk → **Új verzió keresése…**.
+Ha van, a sávon zöld „⬆ Új verzió érhető el” elem jelenik meg; rákattintva frissít és
+újraindul. Kézzel: jobb klikk → **Új verzió keresése…**.
+
+A telepített program az új telepítőt tölti le és futtatja csendben (így a „Programok és
+szolgáltatások” is a jó verziót mutatja); a hordozható exe saját magát cseréli ki.
 
 Parancssorból vagy parancsikonról, kérdezés nélkül (ha a program épp nem fut):
 
@@ -45,8 +63,8 @@ Parancssorból vagy parancsikonról, kérdezés nélkül (ha a program épp nem 
 MailTicker.exe --update
 ```
 
-Az exe-nek írható mappában kell lennie (pl. `%LOCALAPPDATA%\MailTicker` vagy az Asztal),
-a `Program Files` alatt nem tudja kicserélni magát.
+A hordozható exe-nek írható mappában kell lennie (pl. az Asztalon), a `Program Files`
+alatt nem tudja kicserélni magát.
 
 ## Gmail előkészítése
 
@@ -69,9 +87,10 @@ python  mail_ticker.py --demo   :: kipróbálás kitalált levelekkel, Gmail né
 
 ## Exe készítése
 
-Az eredmény mindkét esetben a `dist/MailTicker.exe`, ami Python nélkül is fut.
+Az eredmény mindkét esetben a `dist/MailTicker.exe` (Python nélkül is fut) és a
+`dist/MailTicker-Setup-<verzió>.exe` telepítő (`installer/MailTicker.iss`, Inno Setup 6).
 
-**Windowson** (telepített Pythonnal):
+**Windowson** (telepített Pythonnal; a telepítőhöz Inno Setup 6 is kell):
 
 ```bat
 build.bat
@@ -84,7 +103,7 @@ build.bat
 ```
 
 Az első futás felépíti a build-környezetet a `~/.cache/mail_ticker_wine` mappába
-(Python 3.11 + PyInstaller), a további buildek ezt használják. Kell hozzá a `wine` (32 bites).
+(Python 3.11 + PyInstaller + Inno Setup), a további buildek ezt használják. Kell hozzá a `wine` (32 bites).
 
 ## Új verzió kiadása
 
@@ -92,10 +111,10 @@ A verziószám a `version.py`-ban van; ez kerül az exe tulajdonságaiba, a men�
 Beállítások ablak címébe.
 
 1. `version.py`: `VERSION` átírása (pl. `0.4.0` → `0.4.1`), commit.
-2. `./release.sh` – exe-build (Wine), az exe commitolása `releases/MailTicker-<verzió>.exe`
-   néven, tag, push, GitHub-kiadás az exe-vel.
+2. `./release.sh` – exe- és telepítő-build (Wine), commitolásuk a `releases/` mappába,
+   tag, push, GitHub-kiadás mindkettővel.
 
-Minden kiadott exe megtalálható a tároló `releases/` mappájában is.
+Minden kiadott exe és telepítő megtalálható a tároló `releases/` mappájában is.
 
 A telepített programok ezután maguktól jelzik az új verziót.
 
