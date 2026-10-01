@@ -34,6 +34,7 @@ MIN_POLL_SECONDS = 15
 MIN_WIDTH = 220  # a sáv legkisebb szélessége
 SNAP = 12  # ennyi képponton belül a képernyő széléhez tapad
 DRAG_THRESHOLD = 4  # ennél kisebb elmozdulás még kattintásnak számít
+DISMISS_SETTLE = 10  # mp: ennyi idő alatt a Gmail biztosan olvasottnak mutatja a rákattintott levelet
 UPDATE_UID = -1  # a „új verzió elérhető” elem azonosítója a sávon (a levelek uid-ja pozitív)
 UPDATE_FIRST_CHECK = 15  # mp indulás után
 UPDATE_INTERVAL = 24 * 3600
@@ -68,7 +69,9 @@ class TickerApp:
         self.wake = threading.Event()
         self.order: list[int] = []  # uid-k a sávon, balról jobbra
         self.messages: dict[int, Message] = {}
-        self.dismissed: set[int] = set()  # rákattintott, de a szerver még olvasatlannak mutathatja
+        # rákattintott levelek (uid → kattintás ideje): a kattintás utáni rövid ideig a szerver még
+        # olvasatlannak mutathatja őket, ezalatt nem tesszük vissza a sávra
+        self.dismissed: dict[int, float] = {}
         self.loaded = False
         self.paused = False
         self.error: str | None = None
@@ -310,9 +313,13 @@ class TickerApp:
         self.dismissed.clear()
         self.loaded = False
 
-    def _sync(self, unread: list[Message]) -> None:
+    def _sync(self, unread: list[Message], polled_at: float) -> None:
         unread_uids = {m.uid for m in unread}
-        self.dismissed &= unread_uids
+        for uid, clicked_at in list(self.dismissed.items()):
+            # már olvasott a szerveren → nincs több dolgunk vele; ha viszont egy jóval a kattintás után
+            # indult lekérdezés is olvasatlannak látja, közben olvasatlannak jelölték → újra megjelenik
+            if uid not in unread_uids or polled_at > clicked_at + DISMISS_SETTLE:
+                del self.dismissed[uid]
         for uid in list(self.order):
             if uid != UPDATE_UID and uid not in unread_uids:  # máshol (pl. telefonon) már elolvasták
                 self._remove_item(uid)
@@ -395,11 +402,11 @@ class TickerApp:
             return
         # a Gmail a régi, hexadecimális beszélgetés-azonosítót is elfogadja (és FMfcg… alakra írja át)
         self._open_gmail(f"{self._gmail_base()}#inbox/{msg.gm_thrid:x}")
-        self.dismissed.add(uid)
+        self.dismissed[uid] = time.time()
         self._remove_item(uid)
         self._refresh_status()
         if self.cfg.get_bool("mark_as_read"):
-            threading.Thread(target=self._mark_seen, args=(self.client, uid), daemon=True).start()
+            threading.Thread(target=self._mark_seen, args=(self.client, uid, msg.subject), daemon=True).start()
 
     # ---------- önfrissítés ----------
 
@@ -485,9 +492,10 @@ class TickerApp:
 
     # ---------- háttérszálak ----------
 
-    def _mark_seen(self, client, uid: int) -> None:
+    def _mark_seen(self, client, uid: int, subject: str) -> None:
         try:
             client.mark_seen(uid)
+            log.info("Olvasottnak jelölve (kattintás a sávon): uid=%s „%s”", uid, subject)
         except Exception:
             log.exception("Nem sikerült olvasottnak jelölni (uid=%s)", uid)
 
@@ -499,7 +507,8 @@ class TickerApp:
                 self.queue.put(("error", None, "Nincs beállítva Gmail-fiók – jobb klikk → Beállítások"))
             else:
                 try:
-                    self.queue.put(("messages", client, client.fetch_unread()))
+                    polled_at = time.time()
+                    self.queue.put(("messages", client, (client.fetch_unread(), polled_at)))
                 except AuthError as e:
                     log.warning("Bejelentkezési hiba: %s", e)
                     self.queue.put(("error", client, "Sikertelen bejelentkezés – ellenőrizd a címet és az alkalmazásjelszót"))
@@ -519,7 +528,7 @@ class TickerApp:
                     continue  # időközben fiókot váltottak
                 if kind == "messages":
                     self.error = None
-                    self._sync(payload)
+                    self._sync(*payload)
                 else:
                     self.error = payload
                 self._refresh_status()
