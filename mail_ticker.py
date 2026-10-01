@@ -361,14 +361,22 @@ class TickerApp:
     # ---------- műveletek ----------
 
     def _gmail_base(self) -> str:
-        # authuser: a böngészőben bejelentkezett fiókok közül ezt válassza;
-        # a kódolt @ (%40) az /u/<cím>/ formában „account temporarily unavailable” hibát adott
+        # mail/u/<n>/: a böngészőben bejelentkezett n. Google-fiók (az /u/<cím>/ és az ?authuser= forma nem működött)
+        return f"https://mail.google.com/mail/u/{max(self.cfg.get_int('gmail_account_index'), 0)}/"
+
+    def _open_gmail(self, url: str) -> None:
+        log.info("Megnyitás: %s", url)
         address = getattr(self.client, "address", "")
-        query = f"?authuser={quote(address, safe='@')}" if address else ""
-        return f"https://mail.google.com/mail/{query}"
+        if self.cfg.get_bool("reuse_gmail_tab"):
+            try:
+                if winutil.navigate_existing_gmail(url, address):
+                    return
+            except Exception:
+                log.exception("Nem sikerült a meglévő Gmail-lapot használni")
+        webbrowser.open(url)
 
     def open_inbox(self) -> None:
-        webbrowser.open(self._gmail_base() + "#inbox")
+        self._open_gmail(self._gmail_base() + "#inbox")
 
     def open_message(self, uid: int) -> None:
         if uid == UPDATE_UID:
@@ -377,9 +385,8 @@ class TickerApp:
         msg = self.messages.get(uid)
         if msg is None:
             return
-        url = f"{self._gmail_base()}#all/{msg.gm_thrid:x}"
-        log.info("Megnyitás: %s", url)
-        webbrowser.open(url)
+        # a Gmail a régi, hexadecimális beszélgetés-azonosítót is elfogadja (és FMfcg… alakra írja át)
+        self._open_gmail(f"{self._gmail_base()}#inbox/{msg.gm_thrid:x}")
         self.dismissed.add(uid)
         self._remove_item(uid)
         self._refresh_status()
@@ -540,6 +547,8 @@ class SettingsDialog(tk.Toplevel):
         self.hide_empty = tk.BooleanVar(value=cfg.get_bool("hide_when_empty"))
         self.mark_read = tk.BooleanVar(value=cfg.get_bool("mark_as_read"))
         self.update_check = tk.BooleanVar(value=cfg.get_bool("update_check"))
+        self.account_index = tk.StringVar(value=cfg["gmail_account_index"])
+        self.reuse_tab = tk.BooleanVar(value=cfg.get_bool("reuse_gmail_tab"))
 
         frame = ttk.Frame(self, padding=14)
         frame.pack(fill="both", expand=True)
@@ -567,17 +576,26 @@ class SettingsDialog(tk.Toplevel):
         ttk.Checkbutton(frame, text="Új verzió keresése automatikusan", variable=self.update_check).grid(
             row=7, column=0, columnspan=2, sticky="w", pady=(2, 0)
         )
+        ttk.Checkbutton(frame, text="A már megnyitott Gmail-ablakban nyissa meg a levelet", variable=self.reuse_tab).grid(
+            row=8, column=0, columnspan=2, sticky="w", pady=(2, 0)
+        )
+        ttk.Label(frame, text="Fiók a böngészőben (mail/u/…):").grid(row=9, column=0, sticky="w", pady=(6, 3))
+        ttk.Spinbox(frame, textvariable=self.account_index, from_=0, to=9, width=8).grid(
+            row=9, column=1, sticky="w", pady=(6, 3)
+        )
         ttk.Label(
             frame,
             foreground="#555",
             wraplength=360,
             justify="left",
             text="Gmail-alkalmazásjelszó kell (nem a normál jelszó): Google-fiók → Biztonság → "
-            "Kétlépcsős azonosítás bekapcsolása, majd myaccount.google.com/apppasswords.",
-        ).grid(row=8, column=0, columnspan=2, sticky="w", pady=(10, 0))
+            "Kétlépcsős azonosítás bekapcsolása, majd myaccount.google.com/apppasswords.\n"
+            "Fiók a böngészőben: 0, ha a Gmail címe mail.google.com/mail/u/0/; ha több Google-fiókkal "
+            "vagy bejelentkezve, az ehhez a címhez tartozó szám (u/1, u/2…).",
+        ).grid(row=10, column=0, columnspan=2, sticky="w", pady=(10, 0))
 
         buttons = ttk.Frame(frame)
-        buttons.grid(row=9, column=0, columnspan=2, sticky="e", pady=(14, 0))
+        buttons.grid(row=11, column=0, columnspan=2, sticky="e", pady=(14, 0))
         ttk.Button(buttons, text="Mégse", command=self.destroy).pack(side="right")
         ttk.Button(buttons, text="Mentés", command=self._save).pack(side="right", padx=6)
 
@@ -595,7 +613,8 @@ class SettingsDialog(tk.Toplevel):
             poll = int(self.poll.get())
             speed = float(self.speed.get().replace(",", "."))
             width = int(self.width.get())
-            if poll < MIN_POLL_SECONDS or speed <= 0 or width < MIN_WIDTH:
+            account_index = int(self.account_index.get())
+            if poll < MIN_POLL_SECONDS or speed <= 0 or width < MIN_WIDTH or account_index < 0:
                 raise ValueError
         except ValueError:
             messagebox.showerror(
@@ -615,6 +634,8 @@ class SettingsDialog(tk.Toplevel):
         cfg.set("hide_when_empty", "yes" if self.hide_empty.get() else "no")
         cfg.set("mark_as_read", "yes" if self.mark_read.get() else "no")
         cfg.set("update_check", "yes" if self.update_check.get() else "no")
+        cfg.set("gmail_account_index", account_index)
+        cfg.set("reuse_gmail_tab", "yes" if self.reuse_tab.get() else "no")
         settings.save(cfg)
         self.destroy()
         self.app.apply_settings()

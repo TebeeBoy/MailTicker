@@ -37,6 +37,8 @@ DEFAULTS = {
     "alpha": "0.95",
     "hide_when_empty": "no",
     "mark_as_read": "yes",
+    "gmail_account_index": "0",  # a böngészőben hányadik bejelentkezett Google-fiók (mail/u/<szám>/)
+    "reuse_gmail_tab": "yes",  # ha van nyitott Gmail-ablak, abban nyissa meg a levelet
     "update_check": "yes",  # új verzió keresése indításkor és naponta
 }
 

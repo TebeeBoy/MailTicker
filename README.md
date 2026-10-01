@@ -21,6 +21,17 @@ A sáv helyét és szélességét a program megjegyzi. Ha a mentett hely már ne
 
 A máshol (pl. telefonon) elolvasott levelek a következő lekérdezéskor maguktól eltűnnek.
 
+### Levél megnyitása a már nyitott Gmailben
+
+Ha van olyan böngészőablak (Chrome, Edge, Brave, Opera, Firefox), amelynek **aktív lapja**
+ennek a fióknak a Gmailje, a program azt hozza előtérbe, és abban nyitja meg a levelet
+(a címsorba illeszti a linket, a vágólap tartalmát utána visszaállítja). Ha nincs ilyen
+ablak, vagy a Gmail-lap nem az aktív lap az ablakában, új lapot nyit. Kikapcsolható a
+Beállításokban.
+
+Ha a böngészőben több Google-fiókkal vagy bejelentkezve, a Beállításokban add meg, hányadik
+fiók ez (a Gmail címében: `mail.google.com/mail/u/0/`, `/u/1/`…).
+
 ## Frissítés
 
 A program indítás után és naponta egyszer megnézi a GitHubon, van-e új kiadás.
@@ -80,7 +91,10 @@ A verziószám a `version.py`-ban van; ez kerül az exe tulajdonságaiba, a men�
 Beállítások ablak címébe.
 
 1. `version.py`: `VERSION` átírása (pl. `0.4.0` → `0.4.1`), commit.
-2. `./release.sh` – tag, exe-build (Wine), push, GitHub-kiadás az exe-vel.
+2. `./release.sh` – exe-build (Wine), az exe commitolása `releases/MailTicker-<verzió>.exe`
+   néven, tag, push, GitHub-kiadás az exe-vel.
+
+Minden kiadott exe megtalálható a tároló `releases/` mappájában is.
 
 A telepített programok ezután maguktól jelzik az új verziót.
 
@@ -100,6 +114,8 @@ A kinézet (színek, betűtípus, átlátszóság) a fájlban módosítható, ut
 | `alpha` | 0.95 | átlátszóság (0.3–1.0) |
 | `hide_when_empty` | no | sáv elrejtése, ha nincs olvasatlan levél |
 | `mark_as_read` | yes | kattintáskor olvasottnak jelölés a Gmailben |
+| `gmail_account_index` | 0 | hányadik bejelentkezett Google-fiók a böngészőben (`mail/u/<szám>/`) |
+| `reuse_gmail_tab` | yes | a már megnyitott Gmail-ablakban nyissa meg a levelet |
 | `update_check` | yes | új verzió keresése indításkor és naponta |
 | `update_fg` | | az „új verzió” elem színe |
 
