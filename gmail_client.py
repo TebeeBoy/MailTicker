@@ -15,7 +15,7 @@ IMAP_HOST = "imap.gmail.com"
 FETCH_LIMIT = 50  # ennél több olvasatlan levélből csak a legújabbakat mutatjuk
 
 _UID_RE = re.compile(rb"UID (\d+)")
-_MSGID_RE = re.compile(rb"X-GM-MSGID (\d+)")
+_THRID_RE = re.compile(rb"X-GM-THRID (\d+)")
 
 
 class AuthError(Exception):
@@ -25,7 +25,7 @@ class AuthError(Exception):
 @dataclass
 class Message:
     uid: int
-    gm_msgid: int  # Gmail saját azonosítója, ebből lesz a böngészős link
+    gm_thrid: int  # a Gmail beszélgetés-azonosítója – a webes felület ezzel nyitja meg a levelet
     sender: str
     subject: str
     date: Optional[datetime]
@@ -49,7 +49,7 @@ def _header(msg, name: str):
         return None
 
 
-def _parse_headers(uid: int, gm_msgid: int, raw: bytes) -> Message:
+def _parse_headers(uid: int, gm_thrid: int, raw: bytes) -> Message:
     msg = email.message_from_bytes(raw, policy=email.policy.default)
     legacy = email.message_from_bytes(raw)
 
@@ -76,7 +76,7 @@ def _parse_headers(uid: int, gm_msgid: int, raw: bytes) -> Message:
             date = None
     if date is not None and date.tzinfo:
         date = date.astimezone()
-    return Message(uid, gm_msgid, sender, subject or "(nincs tárgy)", date)
+    return Message(uid, gm_thrid, sender, subject or "(nincs tárgy)", date)
 
 
 def _check(typ: str, data) -> None:
@@ -110,7 +110,7 @@ class GmailClient:
             typ, data = conn.uid(
                 "FETCH",
                 b",".join(uids).decode("ascii"),
-                "(X-GM-MSGID BODY.PEEK[HEADER.FIELDS (FROM SUBJECT DATE)])",
+                "(X-GM-THRID BODY.PEEK[HEADER.FIELDS (FROM SUBJECT DATE)])",
             )
             _check(typ, data)
             messages = []
@@ -118,9 +118,9 @@ class GmailClient:
                 if not isinstance(part, tuple):
                     continue
                 meta, raw = part
-                uid_m, msgid_m = _UID_RE.search(meta), _MSGID_RE.search(meta)
-                if uid_m and msgid_m:
-                    messages.append(_parse_headers(int(uid_m.group(1)), int(msgid_m.group(1)), raw))
+                uid_m, thrid_m = _UID_RE.search(meta), _THRID_RE.search(meta)
+                if uid_m and thrid_m:
+                    messages.append(_parse_headers(int(uid_m.group(1)), int(thrid_m.group(1)), raw))
             messages.sort(key=lambda m: m.uid)
             return messages
         finally:

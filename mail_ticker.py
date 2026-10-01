@@ -346,8 +346,11 @@ class TickerApp:
     # ---------- műveletek ----------
 
     def _gmail_base(self) -> str:
-        address = getattr(self.client, "address", "") or "0"
-        return f"https://mail.google.com/mail/u/{quote(address)}/"
+        # authuser: a böngészőben bejelentkezett fiókok közül ezt válassza;
+        # a kódolt @ (%40) az /u/<cím>/ formában „account temporarily unavailable” hibát adott
+        address = getattr(self.client, "address", "")
+        query = f"?authuser={quote(address, safe='@')}" if address else ""
+        return f"https://mail.google.com/mail/{query}"
 
     def open_inbox(self) -> None:
         webbrowser.open(self._gmail_base() + "#inbox")
@@ -356,7 +359,9 @@ class TickerApp:
         msg = self.messages.get(uid)
         if msg is None:
             return
-        webbrowser.open(f"{self._gmail_base()}#all/{msg.gm_msgid:x}")
+        url = f"{self._gmail_base()}#all/{msg.gm_thrid:x}"
+        log.info("Megnyitás: %s", url)
+        webbrowser.open(url)
         self.dismissed.add(uid)
         self._remove_item(uid)
         self._refresh_status()
