@@ -33,6 +33,7 @@ TICK_MS = 20  # gördítés képkockaideje
 MIN_POLL_SECONDS = 15
 MIN_WIDTH = 220  # a sáv legkisebb szélessége
 SNAP = 12  # ennyi képponton belül a képernyő széléhez tapad
+MIN_FONT_SIZE, MAX_FONT_SIZE = 7, 32
 DRAG_THRESHOLD = 4  # ennél kisebb elmozdulás még kattintásnak számít
 DISMISS_SETTLE = 10  # mp: ennyi idő alatt a Gmail biztosan olvasottnak mutatja a rákattintott levelet
 UPDATE_UID = -1  # a „új verzió elérhető” elem azonosítója a sávon (a levelek uid-ja pozitív)
@@ -97,13 +98,13 @@ class TickerApp:
         self.root.overrideredirect(True)  # keret és tálcagomb nélkül
         self.root.attributes("-topmost", True)
 
-        family, size = cfg["font_family"], cfg.get_int("font_size")
-        self.font = tkfont.Font(self.root, family=family, size=size)
-        self.bold = tkfont.Font(self.root, family=family, size=size, weight="bold")
-        self.small = tkfont.Font(self.root, family=family, size=max(size - 1, 7))
+        family = cfg["font_family"]
+        self.font = tkfont.Font(self.root, family=family)
+        self.bold = tkfont.Font(self.root, family=family, weight="bold")
+        self.small = tkfont.Font(self.root, family=family)
+        self.font_size = None
+        self._set_font_size()
         self.safe_text = make_text_filter(self.root)
-        self.bar_h = self.bold.metrics("linespace") + 10
-        self.mid_y = self.bar_h // 2
 
         self.badge = tk.Label(
             self.root, text="✉ …", font=self.bold, fg="white", bg=cfg["badge_bg"], padx=10, cursor="fleur"
@@ -144,8 +145,50 @@ class TickerApp:
         self.canvas.bind("<Enter>", lambda e: setattr(self, "paused", True))
         self.canvas.bind("<Leave>", lambda e: setattr(self, "paused", False))
 
+    def _set_font_size(self) -> bool:
+        """A beállított betűméret alkalmazása; a sáv magassága a betűmérethez igazodik. True, ha változott."""
+        size = min(max(self.cfg.get_int("font_size"), MIN_FONT_SIZE), MAX_FONT_SIZE)
+        if size == self.font_size:
+            return False
+        self.font_size = size
+        self.font.configure(size=size)
+        self.bold.configure(size=size)
+        self.small.configure(size=max(size - 1, MIN_FONT_SIZE))
+        self.bar_h = self.bold.metrics("linespace") + 10
+        self.mid_y = self.bar_h // 2
+        return True
+
+    def _apply_font_size(self) -> None:
+        """Betűméret-váltás futás közben: új magasság, a levelek újrarajzolása a helyükön."""
+        old_h = self.bar_h
+        if not self._set_font_size():
+            return
+        # ha a sáv a munkaterület aljához volt igazítva, ott is marad (felfelé nő)
+        left, top, right, bottom = winutil.work_area(self.root)
+        y = self.cfg.get_optional_int("y")
+        if y is not None and abs(y + old_h - bottom) < SNAP:
+            self.cfg.set("y", bottom - self.bar_h)
+            settings.save(self.cfg)
+
+        self.canvas.configure(height=self.bar_h)
+        self.canvas.coords(self.status_id, 12, self.mid_y)
+        first = self.canvas.bbox(f"m{self.order[0]}") if self.order else None
+        items = [(uid, self.messages[uid]) for uid in self.order]
+        self.canvas.delete("msg")
+        self.order.clear()
+        self.messages.clear()
+        for uid, msg in items:
+            if uid == UPDATE_UID:
+                self._add_item(msg, icon="⬆", accent=self.cfg["update_fg"])
+            else:
+                self._add_item(msg)
+        if first and self.order:  # ott folytatódjon a gördülés, ahol tartott
+            now = self.canvas.bbox(f"m{self.order[0]}")
+            self.canvas.move("msg", first[0] - now[0], 0)
+
     def apply_settings(self) -> None:
         cfg = self.cfg
+        self._apply_font_size()
         self.root.attributes("-alpha", min(max(cfg.get_float("alpha"), 0.3), 1.0))
         self._place_window()
 
@@ -566,6 +609,7 @@ class SettingsDialog(tk.Toplevel):
         self.update_check = tk.BooleanVar(value=cfg.get_bool("update_check"))
         self.account_index = tk.StringVar(value=cfg["gmail_account_index"])
         self.reuse_tab = tk.BooleanVar(value=cfg.get_bool("reuse_gmail_tab"))
+        self.font_size = tk.StringVar(value=cfg["font_size"])
 
         frame = ttk.Frame(self, padding=14)
         frame.pack(fill="both", expand=True)
@@ -583,22 +627,26 @@ class SettingsDialog(tk.Toplevel):
         ttk.Spinbox(frame, textvariable=self.width, from_=MIN_WIDTH, to=10000, increment=50, width=8).grid(
             row=4, column=1, sticky="w", pady=3
         )
+        ttk.Label(frame, text="Betűméret:").grid(row=5, column=0, sticky="w", pady=3)
+        ttk.Spinbox(frame, textvariable=self.font_size, from_=MIN_FONT_SIZE, to=MAX_FONT_SIZE, width=8).grid(
+            row=5, column=1, sticky="w", pady=3
+        )
 
         ttk.Checkbutton(frame, text="Kattintáskor olvasottnak jelölés a Gmailben", variable=self.mark_read).grid(
-            row=5, column=0, columnspan=2, sticky="w", pady=(8, 2)
+            row=6, column=0, columnspan=2, sticky="w", pady=(8, 2)
         )
         ttk.Checkbutton(frame, text="Sáv elrejtése, ha nincs olvasatlan levél", variable=self.hide_empty).grid(
-            row=6, column=0, columnspan=2, sticky="w"
+            row=7, column=0, columnspan=2, sticky="w"
         )
         ttk.Checkbutton(frame, text="Új verzió keresése automatikusan", variable=self.update_check).grid(
-            row=7, column=0, columnspan=2, sticky="w", pady=(2, 0)
-        )
-        ttk.Checkbutton(frame, text="A már megnyitott Gmail-ablakban nyissa meg a levelet", variable=self.reuse_tab).grid(
             row=8, column=0, columnspan=2, sticky="w", pady=(2, 0)
         )
-        ttk.Label(frame, text="Fiók a böngészőben (mail/u/…):").grid(row=9, column=0, sticky="w", pady=(6, 3))
+        ttk.Checkbutton(frame, text="A már megnyitott Gmail-ablakban nyissa meg a levelet", variable=self.reuse_tab).grid(
+            row=9, column=0, columnspan=2, sticky="w", pady=(2, 0)
+        )
+        ttk.Label(frame, text="Fiók a böngészőben (mail/u/…):").grid(row=10, column=0, sticky="w", pady=(6, 3))
         ttk.Spinbox(frame, textvariable=self.account_index, from_=0, to=9, width=8).grid(
-            row=9, column=1, sticky="w", pady=(6, 3)
+            row=10, column=1, sticky="w", pady=(6, 3)
         )
         ttk.Label(
             frame,
@@ -609,10 +657,10 @@ class SettingsDialog(tk.Toplevel):
             "Kétlépcsős azonosítás bekapcsolása, majd myaccount.google.com/apppasswords.\n"
             "Fiók a böngészőben: 0, ha a Gmail címe mail.google.com/mail/u/0/; ha több Google-fiókkal "
             "vagy bejelentkezve, az ehhez a címhez tartozó szám (u/1, u/2…).",
-        ).grid(row=10, column=0, columnspan=2, sticky="w", pady=(10, 0))
+        ).grid(row=11, column=0, columnspan=2, sticky="w", pady=(10, 0))
 
         buttons = ttk.Frame(frame)
-        buttons.grid(row=11, column=0, columnspan=2, sticky="e", pady=(14, 0))
+        buttons.grid(row=12, column=0, columnspan=2, sticky="e", pady=(14, 0))
         ttk.Button(buttons, text="Mégse", command=self.destroy).pack(side="right")
         ttk.Button(buttons, text="Mentés", command=self._save).pack(side="right", padx=6)
 
@@ -631,11 +679,19 @@ class SettingsDialog(tk.Toplevel):
             speed = float(self.speed.get().replace(",", "."))
             width = int(self.width.get())
             account_index = int(self.account_index.get())
-            if poll < MIN_POLL_SECONDS or speed <= 0 or width < MIN_WIDTH or account_index < 0:
+            font_size = int(self.font_size.get())
+            if (
+                poll < MIN_POLL_SECONDS
+                or speed <= 0
+                or width < MIN_WIDTH
+                or account_index < 0
+                or not MIN_FONT_SIZE <= font_size <= MAX_FONT_SIZE
+            ):
                 raise ValueError
         except ValueError:
             messagebox.showerror(
                 "Mail Ticker", f"A lekérdezés legalább {MIN_POLL_SECONDS} mp, a szélesség legalább {MIN_WIDTH} px, "
+                f"a betűméret {MIN_FONT_SIZE}–{MAX_FONT_SIZE} között, "
                 "a sebesség pozitív szám legyen.", parent=self
             )
             return
@@ -645,6 +701,7 @@ class SettingsDialog(tk.Toplevel):
         cfg.set("poll_seconds", poll)
         cfg.set("speed", speed)
         cfg.set("width", width)
+        cfg.set("font_size", font_size)
         if cfg.get_optional_int("x") is None:  # eddig alaphelyzetben volt: rögzítjük a mostani helyét
             cfg.set("x", self.app.root.winfo_x())
             cfg.set("y", self.app.root.winfo_y())

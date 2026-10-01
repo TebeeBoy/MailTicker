@@ -121,14 +121,15 @@ A telepített programok ezután maguktól jelzik az új verziót.
 ## Beállítások
 
 `%APPDATA%\MailTicker\config.ini` – a fontosabbak a Beállítások ablakban is állíthatók.
-A kinézet (színek, betűtípus, átlátszóság) a fájlban módosítható, utána újra kell indítani a programot:
+A színek, a betűtípus és az átlátszóság csak a fájlban módosítható, utána újra kell indítani a programot:
 
 | Kulcs | Alapérték | Jelentés |
 |---|---|---|
 | `poll_seconds` | 60 | lekérdezés gyakorisága (mp, min. 15) |
 | `x`, `y`, `width` | (üres), 0 | a sáv helye és szélessége (húzással állítódik; 0 = teljes szélesség) |
 | `speed` | 1.5 | gördülési sebesség |
-| `font_family`, `font_size` | Segoe UI, 10 | betűtípus |
+| `font_size` | 10 | betűméret (7–32); a sáv magassága ehhez igazodik – a Beállításokban is |
+| `font_family` | Segoe UI | betűtípus |
 | `bg`, `hover_bg`, `badge_bg`, `error_bg` | | háttérszínek |
 | `sender_fg`, `subject_fg`, `date_fg` | | szövegszínek |
 | `alpha` | 0.95 | átlátszóság (0.3–1.0) |
